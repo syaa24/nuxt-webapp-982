@@ -33,7 +33,7 @@ jobs:
       - name: Unduh Isi Repositori
         uses: actions/checkout@v4
 
-      - name: Konfigurasi User & Aktifkan RDP
+      - name: Konfigurasi User & Aktifkan Layanan RDP
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword }}
@@ -45,8 +45,9 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          Restart-Service -Name "TermService" -Force
 
-      - name: Buat Direct TCP Tunnel (Bore) & Simpan rdp-info.txt
+      - name: Jalankan Tunnel, Simpan rdp-info.txt & Jaga Sesi Aktif
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword }}
@@ -54,7 +55,7 @@ jobs:
           Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
           Expand-Archive -Path "bore.zip" -DestinationPath "." -Force
 
-          Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -NoNewWindow
+          $proc = Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -PassThru -NoNewWindow
 
           $rdpAddress = ""
           for ($i = 0; $i -lt 20; $i++) {
@@ -70,7 +71,7 @@ jobs:
           }
 
           if ([string]::IsNullOrEmpty($rdpAddress)) {
-            $rdpAddress = "Gagal mendeteksi port bore.pub, cek log Actions"
+            $rdpAddress = "Gagal mendeteksi port bore.pub"
           }
 
           @"
@@ -84,15 +85,11 @@ jobs:
           ==========================================
           "@ | Out-File -FilePath "rdp-info.txt" -Encoding utf8
 
-      - name: Simpan rdp-info.txt ke Halaman Code Repositori
-        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add rdp-info.txt
           git commit -m "Update kredensial Direct RDP"
           git push
 
-      - name: Jaga Sesi Tetap Aktif (Maksimal 6 Jam)
-        run: |
-          Write-Host "Direct RDP aktif. Silakan cek file rdp-info.txt di tab Code."
-          Start-Sleep -Seconds 21500
+          Write-Host "Direct RDP aktif di $rdpAddress. Mempertahankan proses tunnel..."
+          Wait-Process -Id $proc.Id
