@@ -46,31 +46,31 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-      - name: Buat Direct TCP Tunnel & Simpan rdp-info.txt
+      - name: Buat Direct TCP Tunnel (Bore) & Simpan rdp-info.txt
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword }}
         run: |
-          Start-Process -FilePath "ssh.exe" -ArgumentList "-t -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=30 -p 443 -R0:localhost:3389 tcp@a.pinggy.io" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -NoNewWindow
-          
+          Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
+          Expand-Archive -Path "bore.zip" -DestinationPath "." -Force
+
+          Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -NoNewWindow
+
           $rdpAddress = ""
-          for ($i = 0; $i -lt 25; $i++) {
+          for ($i = 0; $i -lt 20; $i++) {
             Start-Sleep -Seconds 2
-            $allLogs = ""
-            if (Test-Path "tunnel.log") { $allLogs += Get-Content "tunnel.log" -Raw }
-            if (Test-Path "tunnel_err.log") { $allLogs += Get-Content "tunnel_err.log" -Raw }
+            $logs = ""
+            if (Test-Path "bore.log") { $logs += Get-Content "bore.log" -Raw }
+            if (Test-Path "bore_err.log") { $logs += Get-Content "bore_err.log" -Raw }
             
-            if ($allLogs -match "tcp://([a-zA-Z0-9.-]+:[0-9]+)") {
-              $rdpAddress = $matches[1]
+            if ($logs -match "bore\.pub:([0-9]+)") {
+              $rdpAddress = "bore.pub:" + $matches[1]
               break
             }
           }
 
           if ([string]::IsNullOrEmpty($rdpAddress)) {
-            Write-Host "=== ISI LOG TUNNEL ==="
-            if (Test-Path "tunnel.log") { Get-Content "tunnel.log" }
-            if (Test-Path "tunnel_err.log") { Get-Content "tunnel_err.log" }
-            $rdpAddress = "Gagal mendeteksi alamat, cek log Actions"
+            $rdpAddress = "Gagal mendeteksi port bore.pub, cek log Actions"
           }
 
           @"
