@@ -1,10 +1,10 @@
 ==========================================
 INFORMASI LOGIN RDP AKTIF
 ==========================================
-Host Tunnel : Cek log Actions secara manual
-Perintah PC : cloudflared.exe access tcp --hostname Cek log Actions secara manual --url localhost:33890
+Host Tunnel : meanwhile-revelation-larger-poor.trycloudflare.com
+Perintah PC : cloudflared.exe access tcp --hostname meanwhile-revelation-larger-poor.trycloudflare.com --url localhost:33890
 Alamat RDP  : localhost:33890
 Username    : adminuser
 Password    : P@ssw0rdKu2026!
-Dibuat Pada : 2026-11-21 20:49:25 UTC
+Dibuat Pada : 2026-11-21 20:53:29 UTC
 ==========================================
