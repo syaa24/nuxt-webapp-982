@@ -38,8 +38,9 @@ jobs:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword }}
         run: |
-          net user $env:RDP_USER $env:RDP_PASS /add
-          net localgroup administrators $env:RDP_USER /add
+          $securePassword = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
+          New-LocalUser -Name $env:RDP_USER -Password $securePassword -FullName $env:RDP_USER -PasswordNeverExpires -ErrorAction Stop
+          Add-LocalGroupMember -Group "Administrators" -Member $env:RDP_USER -ErrorAction Stop
 
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
