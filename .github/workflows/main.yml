@@ -1,4 +1,4 @@
-name: Self-Hosted Personal Workspace
+name: Self-Hosted Personal Workspace (Direct RDP)
 
 on:
   workflow_dispatch:
@@ -46,40 +46,37 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
 
-      - name: Jalankan Tunnel & Buat File rdp-info.txt
+      - name: Buat Direct TCP Tunnel & Simpan rdp-info.txt
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword }}
         run: |
-          Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflared.exe"
-          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --logfile cloudflared.log" -NoNewWindow
+          Start-Process -FilePath "ssh.exe" -ArgumentList "-o StrictHostKeyChecking=no -o ServerAliveInterval=30 -p 443 -R0:localhost:3389 tcp@a.pinggy.io" -RedirectStandardOutput "tunnel.log" -RedirectStandardError "tunnel_err.log" -NoNewWindow
           
-          $tunnelHost = ""
-          for ($i = 0; $i -lt 30; $i++) {
+          $rdpAddress = ""
+          for ($i = 0; $i -lt 20; $i++) {
             Start-Sleep -Seconds 2
-            if (Test-Path "cloudflared.log") {
-              $logContent = Get-Content "cloudflared.log" -Raw
-              if ($logContent -match "([a-zA-Z0-9-]+\.trycloudflare\.com)") {
-                $tunnelHost = $matches[1]
+            if (Test-Path "tunnel.log") {
+              $content = Get-Content "tunnel.log" -Raw
+              if ($content -match "tcp://([a-zA-Z0-9.-]+:[0-9]+)") {
+                $rdpAddress = $matches[1]
                 break
               }
             }
           }
 
-          if ([string]::IsNullOrEmpty($tunnelHost)) {
-            $tunnelHost = "Gagal mendeteksi URL otomatis, cek log Actions"
+          if ([string]::IsNullOrEmpty($rdpAddress)) {
+            $rdpAddress = "Gagal mendeteksi alamat, cek log Actions"
           }
 
           @"
           ==========================================
-          INFORMASI LOGIN RDP AKTIF
+          INFORMASI LOGIN RDP LANGSUNG (DIRECT)
           ==========================================
-          Host Tunnel : $tunnelHost
-          Perintah PC : cloudflared.exe access tcp --hostname $tunnelHost --url localhost:33890
-          Alamat RDP  : localhost:33890
-          Username    : $env:RDP_USER
-          Password    : $env:RDP_PASS
-          Dibuat Pada : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") UTC
+          Alamat RDP : $rdpAddress
+          Username   : $env:RDP_USER
+          Password   : $env:RDP_PASS
+          Dibuat     : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") UTC
           ==========================================
           "@ | Out-File -FilePath "rdp-info.txt" -Encoding utf8
 
@@ -88,10 +85,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add rdp-info.txt
-          git commit -m "Update kredensial RDP aktif"
+          git commit -m "Update kredensial Direct RDP"
           git push
 
       - name: Jaga Sesi Tetap Aktif (Maksimal 6 Jam)
         run: |
-          Write-Host "Workspace aktif. Silakan cek file rdp-info.txt di tab Code."
+          Write-Host "Direct RDP aktif. Silakan cek file rdp-info.txt di tab Code."
           Start-Sleep -Seconds 21500
