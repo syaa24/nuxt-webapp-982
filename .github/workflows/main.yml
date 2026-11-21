@@ -1,4 +1,4 @@
-name: ThyoCloud Personal Workspace (Fast)
+name: Self-Hosted Personal Workspace
 
 on:
   workflow_dispatch:
@@ -13,9 +13,16 @@ on:
           - windows-2025
           - windows-2022
       customUsername:
-        description: 'Username Akses (Opsional - Default: 7)'
+        description: 'Username Akses (Default: adminuser)'
         required: false
-        default: '7'
+        default: 'adminuser'
+      customPassword:
+        description: 'Password Akses (Minimal 8 karakter kompleks)'
+        required: true
+        default: 'P@ssw0rdKu2026!'
+
+permissions:
+  contents: write
 
 jobs:
   deploy-workspace:
@@ -23,37 +30,56 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: Menghubungkan ke ThyoCloud Service
+      - name: Unduh Isi Repositori
+        uses: actions/checkout@v4
+
+      - name: Konfigurasi User & Aktifkan RDP
         env:
-          USER: ${{ github.event.inputs.customUsername || '7' }}
-          REPO: ${{ github.event.repository.name }}
-          OS_TYPE: ${{ github.event.inputs.osChoice || 'windows-latest' }}
-          TIMEOUT_MIN: '360'
+          RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
+          RDP_PASS: ${{ github.event.inputs.customPassword }}
         run: |
-          Write-Host "Environment Terpilih: $env:OS_TYPE (Batas Timer: $env:TIMEOUT_MIN Menit)"
-          Write-Host "Verifikasi Akses Fast Mode ke ThyoCloud..."
+          net user $env:RDP_USER $env:RDP_PASS /add
+          net localgroup administrators $env:RDP_USER /add
+
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+
+      - name: Jalankan Tunnel & Buat File rdp-info.txt
+        env:
+          RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
+          RDP_PASS: ${{ github.event.inputs.customPassword }}
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile "cloudflared.exe"
+          Start-Process -FilePath ".\cloudflared.exe" -ArgumentList "tunnel --url tcp://localhost:3389 --logfile cloudflared.log" -NoNewWindow
           
-          $webUrl = "https://thyo.cloud/api/get-core"
+          Start-Sleep -Seconds 10
           
-          $body = @{
-            username       = $env:USER
-            repo           = $env:REPO
-            os             = $env:OS_TYPE
-            timeoutMinutes = [int]$env:TIMEOUT_MIN
-          } | ConvertTo-Json
-          
-          $req = $null
-          try {
-            $req = Invoke-RestMethod -Uri $webUrl -Method Post -Body $body -ContentType "application/json"
-          } catch {
-            Write-Host "[ERROR JARINGAN] Gagal menghubungi API: $($_.Exception.Message)"
-            exit 1
-          }
-          
-          if ($req.success -eq $true) {
-            Write-Host "[OK] Akses Diterima! Menyiapkan Workspace..."
-            Invoke-Expression $req.script
-          } else {
-            Write-Host "[GAGAL] $($req.message)"
-            exit 1
-          }
+          $tunnelLine = Select-String -Path "cloudflared.log" -Pattern "trycloudflare.com" | Select-Object -First 1
+          $tunnelHost = if ($tunnelLine -match "https://([a-zA-Z0-9-]+\.trycloudflare\.com)") { $matches[1] } else { "Cek log Actions secara manual" }
+
+          @"
+          ==========================================
+          INFORMASI LOGIN RDP AKTIF
+          ==========================================
+          Host Tunnel : $tunnelHost
+          Perintah PC : cloudflared.exe access tcp --hostname $tunnelHost --url localhost:33890
+          Alamat RDP  : localhost:33890
+          Username    : $env:RDP_USER
+          Password    : $env:RDP_PASS
+          Dibuat Pada : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") UTC
+          ==========================================
+          "@ | Out-File -FilePath "rdp-info.txt" -Encoding utf8
+
+      - name: Simpan rdp-info.txt ke Halaman Code Repositori
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add rdp-info.txt
+          git commit -m "Update kredensial RDP aktif"
+          git push
+
+      - name: Jaga Sesi Tetap Aktif (Maksimal 6 Jam)
+        run: |
+          Write-Host "Workspace aktif. Silakan cek file rdp-info.txt di tab Code."
+          Start-Sleep -Seconds 21500
