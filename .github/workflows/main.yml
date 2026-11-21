@@ -7,11 +7,11 @@ on:
         description: 'Pilih Versi OS Environment'
         required: true
         type: choice
-        default: 'windows-latest'
+        default: 'windows-2022'
         options:
-          - windows-latest
-          - windows-2025
           - windows-2022
+          - windows-2025
+          - windows-latest
       customUsername:
         description: 'Username Akses (Default: adminuser)'
         required: false
@@ -21,19 +21,18 @@ on:
         required: true
         default: 'P@ssw0rdKu2026!'
 
-permissions:
-  contents: write
+concurrency:
+  group: direct-rdp-akun2
+  cancel-in-progress: true
 
 jobs:
   deploy-workspace:
-    runs-on: ${{ github.event.inputs.osChoice || 'windows-latest' }}
+    runs-on: ${{ github.event.inputs.osChoice || 'windows-2022' }}
     timeout-minutes: 360
 
     steps:
-      - name: Unduh Isi Repositori
-        uses: actions/checkout@v4
-
       - name: Konfigurasi User & Aktifkan Layanan RDP
+        shell: pwsh
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword }}
@@ -41,55 +40,63 @@ jobs:
           $securePassword = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
           New-LocalUser -Name $env:RDP_USER -Password $securePassword -FullName $env:RDP_USER -PasswordNeverExpires -ErrorAction Stop
           Add-LocalGroupMember -Group "Administrators" -Member $env:RDP_USER -ErrorAction Stop
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $env:RDP_USER -ErrorAction SilentlyContinue
 
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
           Restart-Service -Name "TermService" -Force
 
-      - name: Jalankan Tunnel, Simpan rdp-info.txt & Jaga Sesi Aktif
+      - name: Jalankan Tunnel, Kirim ke Google Sheets & Jaga Sesi Aktif
+        shell: pwsh
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword }}
         run: |
+          $WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwUXd6ZVeLkZULzI7QHibFUD9y4OnYRNG-jSrD56E7KrDWwmwX1Uq0Js-cEld2eu6Ok/exec"
+
           Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
           Expand-Archive -Path "bore.zip" -DestinationPath "." -Force
 
           $proc = Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -RedirectStandardError "bore_err.log" -PassThru -NoNewWindow
 
           $rdpAddress = ""
-          for ($i = 0; $i -lt 20; $i++) {
+          $portOnly = ""
+          for ($i = 0; $i -lt 25; $i++) {
             Start-Sleep -Seconds 2
             $logs = ""
             if (Test-Path "bore.log") { $logs += Get-Content "bore.log" -Raw }
             if (Test-Path "bore_err.log") { $logs += Get-Content "bore_err.log" -Raw }
-            
+
             if ($logs -match "bore\.pub:([0-9]+)") {
-              $rdpAddress = "bore.pub:" + $matches[1]
+              $portOnly = $matches[1]
+              $rdpAddress = "bore.pub:$portOnly"
               break
             }
           }
 
           if ([string]::IsNullOrEmpty($rdpAddress)) {
-            $rdpAddress = "Gagal mendeteksi port bore.pub"
+            Write-Error "Gagal mendeteksi port bore.pub"
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            exit 1
           }
 
-          @"
-          ==========================================
-          INFORMASI LOGIN RDP LANGSUNG (DIRECT)
-          ==========================================
-          Alamat RDP : $rdpAddress
-          Username   : $env:RDP_USER
-          Password   : $env:RDP_PASS
-          Dibuat     : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss") UTC
-          ==========================================
-          "@ | Out-File -FilePath "rdp-info.txt" -Encoding utf8
+          Write-Host "Tunnel aktif di $rdpAddress, mengirim ke Google Sheets (Akun2)..."
+          $payload = @{
+            slot         = "akun2"
+            host         = "bore.pub"
+            port         = $portOnly
+            full_address = $rdpAddress
+            username     = $env:RDP_USER
+            password     = $env:RDP_PASS
+          } | ConvertTo-Json -Compress
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add rdp-info.txt
-          git commit -m "Update kredensial Direct RDP"
-          git push
+          try {
+            $resp = Invoke-RestMethod -Uri $WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json" -TimeoutSec 15
+            Write-Host "Status Google Sheets: $resp"
+          } catch {
+            Write-Host "Gagal mengirim ke Google Sheets: $_"
+          }
 
           Write-Host "Direct RDP aktif di $rdpAddress. Mempertahankan proses tunnel..."
           Wait-Process -Id $proc.Id
