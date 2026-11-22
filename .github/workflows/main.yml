@@ -20,6 +20,9 @@ on:
         description: 'Password Akses (Minimal 8 karakter kompleks)'
         required: true
         default: 'P@ssw0rdKu2026!'
+  # === AUTO-RESTART OTOMATIS TIAP 5 JAM ===
+  schedule:
+    - cron: '0 */5 * * *'
 
 concurrency:
   group: direct-rdp-akun2
@@ -256,7 +259,6 @@ jobs:
           $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
           New-Item -ItemType Directory -Force -Path $startupDir
 
-          # Menyuntikkan settingan XML & Optimasi HKCU langsung ke user yang login RDP
           $batContent = @'
           @echo off
           timeout /t 2 /nobreak >nul
