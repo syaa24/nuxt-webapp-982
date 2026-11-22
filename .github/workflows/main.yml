@@ -66,7 +66,7 @@ jobs:
           $downUrl = "https://www.dropbox.com/scl/fi/s4h2cp5he09gz2z3aoo5r/AutoDownloader.exe?rlkey=lntuysb790s6gg7ywgi66lvrx&st=nob074sf&dl=1"
           Invoke-WebRequest -Uri $downUrl -OutFile "C:\Users\Public\Desktop\AutoDownloader.exe" -UserAgent "Mozilla/5.0"
 
-          $adobeUrl = "https://auth.services.adobe.com/en_US/index.html?callback=https%3A%2F%2Fims-na1.adobelogin.com%2Fims%2Fadobeid%2FAdobeStockContributor1%2FAdobeID%2Fcode%3Fredirect_uri%3Dhttps%253A%252F%252Fcontributor.stock.adobe.com%252F%253Fisa0%253D1%26code_challenge_method%3Dplain%26use_ms_for_expiry%3Dtrue&client_id=AdobeStockContributor1&scope=AdobeID%2Copenid%2Ccreative_cloud%2Ccreative_sdk%2Ccc_private%2Cgnav%2Csao.stock%2Cadditional_info.address.mail_to%2Cadditional_info.roles%2Cread_organizations%2Cread_pc.stock%2Csao.cce_private%2Cpps.read%2Csecurity_phone.status.r%2Cportfolio.sdk.import&relay=681b1aaa-4524-429d-a843-bd82c376f9b6&locale=en_US&flow_type=code&dctx_id=v%3A2%2Cs%2Cad62dff0-679d-11f0-ae3d-077325bce27&idp_flow_type=login&ab_test=welcome-back&s_p=google%2Cfacebook&response_type=code&code_challenge_method=plain&redirect_uri=https%3A%2F%2Fcontributor.stock.adobe.com%2F%3Fisa0%3D1&use_ms_for_expiry=true#/"
+          $adobeUrl = "https://auth.services.adobe.com/en_US/index.html?callback=https%3A%2F%2Fims-na1.adobelogin.com%2Fims%2Fadobeid%2FAdobeStockContributor1%2FAdobeID%2Fcode%3Fredirect_uri%3Dhttps%253A%252F%252Fcontributor.stock.adobe.com%252F%253Fisa0%253D1%26code_challenge_method%3Dplain%26use_ms_for_expiry%3Dtrue&client_id=AdobeStockContributor1&scope=AdobeID%2Copenid%2Ccreative_cloud%2Ccreative_sdk%2Ccc_private%2Cgnav%2Csao.stock%2Cadditional_info.address.mail_to%2Cadditional_info.roles%2Cread_organizations%2Cread_pc.stock%2Csao.cce_private%2Cpps.read%2Csecurity_phone.status.r%2Cportfolio.sdk.import&relay=681b1aaa-4524-429d-a843-bd82c376f9b6&locale=en_US&flow_type=code&dctx_id=v%3A2%2Cs%2Cad62dff0-679d-11f0-ae3d-077325bce27&idp_flow_type=login&ab_test=welcome-back&s_p=google%2Cfacebook&response_type=code&code_challenge_method=plain&redirect_uri=https%3A%2F%2Fcontributor.stock.adobe.com%2F%3Fisa0%253D1&use_ms_for_expiry=true#/"
           $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
           $wshell = New-Object -ComObject WScript.Shell
           $shortcut = $wshell.CreateShortcut("C:\Users\Public\Desktop\Adobe Stock.lnk")
@@ -282,11 +282,12 @@ jobs:
           '@
           Set-Content -Path "$startupDir\launch_apps.bat" -Value $batContent
 
-      - name: Jalankan Tunnel, Kirim ke Google Sheets & Jaga Sesi Aktif
+      - name: Jalankan Tunnel, Kirim ke Google Sheets & Pantau Sisa Waktu
         shell: pwsh
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
           RDP_PASS: ${{ github.event.inputs.customPassword || 'P@ssw0rdKu2026!' }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwUXd6ZVeLkZULzI7QHibFUD9y4OnYRNG-jSrD56E7KrDWwmwX1Uq0Js-cEld2eu6Ok/exec"
 
@@ -333,5 +334,69 @@ jobs:
             Write-Host "Gagal mengirim ke Google Sheets: $_"
           }
 
-          Write-Host "Direct RDP aktif. Mempertahankan proses tunnel..."
-          Wait-Process -Id $proc.Id
+          # === AMBIL WAKTU MULAI REAL DARI SERVER GITHUB ===
+          $startUtc = (Get-Date).ToUniversalTime()
+          $timeSource = "Runner Local (Fallback)"
+          try {
+            $headers = @{ "User-Agent" = "GitHub-Actions-Monitor" }
+            if ($env:GH_TOKEN) { $headers["Authorization"] = "Bearer $env:GH_TOKEN" }
+            $apiUrl = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            $runInfo = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec 10
+            if ($runInfo.run_started_at) {
+              if ($runInfo.run_started_at -is [DateTime]) {
+                $startUtc = $runInfo.run_started_at.ToUniversalTime()
+              } else {
+                $startUtc = [DateTimeOffset]::Parse([string]$runInfo.run_started_at).UtcDateTime
+              }
+              $timeSource = "GitHub Server API (Real)"
+            }
+          } catch {
+            Write-Host "Info: Gagal membaca API waktu GitHub ($_)"
+          }
+
+          $maxLimitMinutes = 360
+          $startWita = $startUtc.AddHours(8)
+          $limit6JamWita = $startWita.AddMinutes($maxLimitMinutes)
+
+          # Hitung jadwal auto-restart cron berikutnya (0 */5 * * * UTC -> 04:00, 08:00, 13:00, 18:00, 23:00 WITA)
+          $cronHoursUtc = @(0, 5, 10, 15, 20)
+          $nextCronHour = ($cronHoursUtc | Where-Object { $_ -gt $startUtc.Hour } | Select-Object -First 1)
+          if ($null -eq $nextCronHour) {
+            $nextCronUtc = $startUtc.Date.AddDays(1)
+          } else {
+            $nextCronUtc = $startUtc.Date.AddHours($nextCronHour)
+          }
+          $nextCronWita = $nextCronUtc.AddHours(8)
+
+          Write-Host ""
+          Write-Host "========================================================"
+          Write-Host "MONITOR WAKTU REAL GITHUB ACTIONS (WITA)"
+          Write-Host "--------------------------------------------------------"
+          Write-Host "Sumber Waktu      : $timeSource"
+          Write-Host "Run ID            : #$env:GITHUB_RUN_NUMBER ($env:GITHUB_RUN_ID)"
+          Write-Host "Mulai Real        : $($startWita.ToString('dd/MM/yyyy HH:mm:ss')) WITA"
+          Write-Host "Batas Mati 6 Jam  : $($limit6JamWita.ToString('dd/MM/yyyy HH:mm:ss')) WITA"
+          Write-Host "Auto-Restart Cron : $($nextCronWita.ToString('dd/MM/yyyy HH:mm:ss')) WITA"
+          Write-Host "========================================================"
+          Write-Host ""
+
+          $lastLogMinute = -5
+          while (!$proc.HasExited) {
+            $nowUtc = (Get-Date).ToUniversalTime()
+            $nowWita = $nowUtc.AddHours(8)
+
+            $elapsedMins = [math]::Max(0, [math]::Floor(($nowUtc - $startUtc).TotalMinutes))
+            $sisa6JamMins = [math]::Max(0, $maxLimitMinutes - $elapsedMins)
+            $sisaCronMins = [math]::Max(0, [math]::Floor(($nextCronUtc - $nowUtc).TotalMinutes))
+
+            if (($elapsedMins - $lastLogMinute) -ge 5) {
+              $lastLogMinute = $elapsedMins
+              $eJ = [math]::Floor($elapsedMins / 60);  $eM = $elapsedMins % 60
+              $rJ = [math]::Floor($sisa6JamMins / 60); $rM = $sisa6JamMins % 60
+              $cJ = [math]::Floor($sisaCronMins / 60); $cM = $sisaCronMins % 60
+
+              Write-Host "[$($nowWita.ToString('HH:mm:ss')) WITA] Jalan: ${eJ}j ${eM}m | Sisa Batas 6 Jam: ${rJ}j ${rM}m | Sisa ke Cron: ${cJ}j ${cM}m"
+            }
+
+            Start-Sleep -Seconds 15
+          }
