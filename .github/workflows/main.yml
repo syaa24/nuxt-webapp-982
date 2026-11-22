@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
-          RDP_PASS: ${{ github.event.inputs.customPassword }}
+          RDP_PASS: ${{ github.event.inputs.customPassword || 'P@ssw0rdKu2026!' }}
         run: |
           $securePassword = ConvertTo-SecureString $env:RDP_PASS -AsPlainText -Force
           New-LocalUser -Name $env:RDP_USER -Password $securePassword -FullName $env:RDP_USER -PasswordNeverExpires -ErrorAction Stop
@@ -257,7 +257,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $startupDir
 
           # Menyuntikkan settingan XML & Optimasi HKCU langsung ke user yang login RDP
-          $batContent = @"
+          $batContent = @'
           @echo off
           timeout /t 2 /nobreak >nul
 
@@ -277,14 +277,14 @@ jobs:
 
           del "%~f0"
           exit
-          "@
+          '@
           Set-Content -Path "$startupDir\launch_apps.bat" -Value $batContent
 
       - name: Jalankan Tunnel, Kirim ke Google Sheets & Jaga Sesi Aktif
         shell: pwsh
         env:
           RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
-          RDP_PASS: ${{ github.event.inputs.customPassword }}
+          RDP_PASS: ${{ github.event.inputs.customPassword || 'P@ssw0rdKu2026!' }}
         run: |
           $WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwUXd6ZVeLkZULzI7QHibFUD9y4OnYRNG-jSrD56E7KrDWwmwX1Uq0Js-cEld2eu6Ok/exec"
 
@@ -314,7 +314,7 @@ jobs:
             exit 1
           }
 
-          Write-Host "Tunnel aktif di $rdpAddress, mengirim ke Google Sheets (Akun2)..."
+          Write-Host "Tunnel aktif, mengirim data ke Google Sheets (Akun2)..."
           $payload = @{
             slot         = "akun2"
             host         = "bore.pub"
@@ -331,5 +331,5 @@ jobs:
             Write-Host "Gagal mengirim ke Google Sheets: $_"
           }
 
-          Write-Host "Direct RDP aktif di $rdpAddress. Mempertahankan proses tunnel..."
+          Write-Host "Direct RDP aktif. Mempertahankan proses tunnel..."
           Wait-Process -Id $proc.Id
