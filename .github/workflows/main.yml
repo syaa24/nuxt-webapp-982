@@ -45,7 +45,240 @@ jobs:
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+
+      - name: Optimize Registry 4K
+        shell: pwsh
+        run: |
+          $tsPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+          if (!(Test-Path $tsPath)) { New-Item -Path $tsPath -Force }
+          Set-ItemProperty -Path $tsPath -Name "fEnableVirtualizedGraphics" -Value 1 -Type DWord
+          Set-ItemProperty -Path $tsPath -Name "MinFrameRate" -Value 120 -Type DWord
           Restart-Service -Name "TermService" -Force
+
+      - name: Install FileZilla & Tools
+        shell: pwsh
+        run: |
+          choco install filezilla -y --no-progress
+
+          $downUrl = "https://www.dropbox.com/scl/fi/s4h2cp5he09gz2z3aoo5r/AutoDownloader.exe?rlkey=lntuysb790s6gg7ywgi66lvrx&st=nob074sf&dl=1"
+          Invoke-WebRequest -Uri $downUrl -OutFile "C:\Users\Public\Desktop\AutoDownloader.exe" -UserAgent "Mozilla/5.0"
+
+          $adobeUrl = "https://auth.services.adobe.com/en_US/index.html?callback=https%3A%2F%2Fims-na1.adobelogin.com%2Fims%2Fadobeid%2FAdobeStockContributor1%2FAdobeID%2Fcode%3Fredirect_uri%3Dhttps%253A%252F%252Fcontributor.stock.adobe.com%252F%253Fisa0%253D1%26code_challenge_method%3Dplain%26use_ms_for_expiry%3Dtrue&client_id=AdobeStockContributor1&scope=AdobeID%2Copenid%2Ccreative_cloud%2Ccreative_sdk%2Ccc_private%2Cgnav%2Csao.stock%2Cadditional_info.address.mail_to%2Cadditional_info.roles%2Cread_organizations%2Cread_pc.stock%2Csao.cce_private%2Cpps.read%2Csecurity_phone.status.r%2Cportfolio.sdk.import&relay=681b1aaa-4524-429d-a843-bd82c376f9b6&locale=en_US&flow_type=code&dctx_id=v%3A2%2Cs%2Cad62dff0-679d-11f0-ae3d-077325bce27&idp_flow_type=login&ab_test=welcome-back&s_p=google%2Cfacebook&response_type=code&code_challenge_method=plain&redirect_uri=https%3A%2F%2Fcontributor.stock.adobe.com%2F%3Fisa0%3D1&use_ms_for_expiry=true#/"
+          $chromePath = "C:\Program Files\Google\Chrome\Application\chrome.exe"
+          $wshell = New-Object -ComObject WScript.Shell
+          $shortcut = $wshell.CreateShortcut("C:\Users\Public\Desktop\Adobe Stock.lnk")
+          $shortcut.TargetPath = $chromePath
+          $shortcut.Arguments = "--incognito `"$adobeUrl`""
+          $shortcut.Save()
+
+      - name: Generate Master XML Config FileZilla (Full Settings Asli)
+        shell: pwsh
+        env:
+          RDP_USER: ${{ github.event.inputs.customUsername || 'adminuser' }}
+        run: |
+          # 1. filezilla.xml lengkap dengan bypass popup Welcome & LocalPath dinamis sesuai RDP_USER
+          $fzXml = @'
+          <?xml version="1.0"?>
+          <FileZilla3 version="3.71.1" platform="windows">
+            <Settings>
+              <Setting name="Maximum simultaneous transfers">10</Setting>
+              <Setting name="Use Pasv mode">1</Setting>
+              <Setting name="Limit local ports">0</Setting>
+              <Setting name="Limit ports low">6000</Setting>
+              <Setting name="Limit ports high">7000</Setting>
+              <Setting name="Limit ports offset">0</Setting>
+              <Setting name="External IP mode">0</Setting>
+              <Setting name="External IP" />
+              <Setting name="External address resolver">http://ip.filezilla-project.org/ip.php</Setting>
+              <Setting name="Last resolved IP" />
+              <Setting name="No external ip on local conn">1</Setting>
+              <Setting name="Pasv reply fallback mode">0</Setting>
+              <Setting name="Timeout">20</Setting>
+              <Setting name="Logging Debug Level">0</Setting>
+              <Setting name="Logging Raw Listing">0</Setting>
+              <Setting name="Allow transfermode fallback">1</Setting>
+              <Setting name="Reconnect count">2</Setting>
+              <Setting name="Reconnect delay">5</Setting>
+              <Setting name="Enable speed limits">0</Setting>
+              <Setting name="Speedlimit inbound">1000</Setting>
+              <Setting name="Speedlimit outbound">100</Setting>
+              <Setting name="Speedlimit burst tolerance">0</Setting>
+              <Setting name="Preallocate space">0</Setting>
+              <Setting name="View hidden files">0</Setting>
+              <Setting name="Preserve timestamps">0</Setting>
+              <Setting name="Socket recv buffer size (v2)">4194304</Setting>
+              <Setting name="FTP Keep-alive commands">0</Setting>
+              <Setting name="FTP Proxy type">0</Setting>
+              <Setting name="FTP Proxy host" />
+              <Setting name="FTP Proxy user" />
+              <Setting name="FTP Proxy password" />
+              <Setting name="FTP Proxy login sequence" />
+              <Setting name="SFTP keyfiles" platform="win" />
+              <Setting name="SFTP compression">0</Setting>
+              <Setting name="Proxy type">0</Setting>
+              <Setting name="Proxy host" />
+              <Setting name="Proxy port">0</Setting>
+              <Setting name="Proxy user" />
+              <Setting name="Proxy password" />
+              <Setting name="Logging file" platform="win" />
+              <Setting name="Logging filesize limit">10</Setting>
+              <Setting name="Size format">0</Setting>
+              <Setting name="Size thousands separator">1</Setting>
+              <Setting name="Size decimal places">1</Setting>
+              <Setting name="TCP Keepalive Interval">15</Setting>
+              <Setting name="Cache TTL">600</Setting>
+              <Setting name="Minimum TLS Version">2</Setting>
+              <Setting name="Directory listing item limit">10000000</Setting>
+              <Setting name="Update Check Interval">7</Setting>
+              <Setting name="Update Check Check Beta">0</Setting>
+              <Setting name="Kiosk mode">0</Setting>
+              <Setting name="Master password encryptor" />
+              <Setting name="Trust system trust store">0</Setting>
+              <Setting name="Ascii Binary mode">0</Setting>
+              <Setting name="Auto Ascii files">ac|am|asp|bat|c|cfm|cgi|conf|cpp|css|dhtml|diff|diz|h|hpp|htm|html|in|inc|java|js|jsp|lua|m4|mak|md5|nfo|nsh|nsi|pas|patch|pem|php|phtml|pl|po|pot|py|qmail|sh|sha1|sha256|sha512|shtml|sql|svg|tcl|tpl|txt|vbs|xhtml|xml|xrc</Setting>
+              <Setting name="Auto Ascii no extension">1</Setting>
+              <Setting name="Auto Ascii dotfiles">1</Setting>
+              <Setting name="Comparison threshold">1</Setting>
+              <Setting name="Remote recursive operation list refresh">0</Setting>
+              <Setting name="Cache directory" platform="win" />
+              <Setting name="Language Code" />
+              <Setting name="Concurrent download limit">0</Setting>
+              <Setting name="Concurrent upload limit">0</Setting>
+              <Setting name="Show debug menu">0</Setting>
+              <Setting name="File exists action download">0</Setting>
+              <Setting name="File exists action upload">0</Setting>
+              <Setting name="Allow ascii resume">0</Setting>
+              <Setting name="Greeting resources" />
+              <Setting name="Onetime Dialogs" />
+              <Setting name="Show Tree Local">1</Setting>
+              <Setting name="Show Tree Remote">1</Setting>
+              <Setting name="File Pane Layout">0</Setting>
+              <Setting name="File Pane Swap">0</Setting>
+              <Setting name="Filelist directory sort">0</Setting>
+              <Setting name="Filelist name sort">0</Setting>
+              <Setting name="Queue successful autoclear">0</Setting>
+              <Setting name="Show message log">1</Setting>
+              <Setting name="Show queue">1</Setting>
+              <Setting name="Always use default editor">0</Setting>
+              <Setting name="File associations (v2)" platform="win" />
+              <Setting name="Comparison mode">1</Setting>
+              <Setting name="Site Manager position" />
+              <Setting name="Icon theme">default</Setting>
+              <Setting name="Icon scale">125</Setting>
+              <Setting name="Timestamp in message log">0</Setting>
+              <Setting name="Sitemanager last selected" />
+              <Setting name="Filelist status bar">1</Setting>
+              <Setting name="Filter toggle state">0</Setting>
+              <Setting name="Show quickconnect bar">1</Setting>
+              <Setting name="Messagelog position">0</Setting>
+              <Setting name="File doubleclick action">0</Setting>
+              <Setting name="Dir doubleclick action">0</Setting>
+              <Setting name="Minimize to tray">0</Setting>
+              <Setting name="Search column widths" />
+              <Setting name="Search column shown" />
+              <Setting name="Search column order" />
+              <Setting name="Search window size" />
+              <Setting name="Comparison hide identical">0</Setting>
+              <Setting name="Search sort order" />
+              <Setting name="Edit track local">1</Setting>
+              <Setting name="Prevent idle sleep">1</Setting>
+              <Setting name="Filteredit window size" />
+              <Setting name="Invalid char replace">_</Setting>
+              <Setting name="Already connected choice">0</Setting>
+              <Setting name="Edit status dialog size" />
+              <Setting name="Display current speed">0</Setting>
+              <Setting name="Toolbar hidden">0</Setting>
+              <Setting name="Strip VMS revisions">0</Setting>
+              <Setting name="Startup action">0</Setting>
+              <Setting name="Persistent Choices">0</Setting>
+              <Setting name="Queue completion action">1</Setting>
+              <Setting name="Queue completion command" />
+              <Setting name="Drag and Drop disabled">0</Setting>
+              <Setting name="Disable update footer">0</Setting>
+              <Setting name="Highest shown overlay id">0</Setting>
+              <Setting name="Resolve local symlinks" platform="win">1</Setting>
+              <Setting name="Last automatic update check">2026-08-01 16:10:56</Setting>
+              <Setting name="Greeting version">3.99.9</Setting>
+              <Setting name="Prompt password save">1</Setting>
+              <Setting name="Last automatic update version">3.99.9</Setting>
+              <Setting name="Queue column widths">180 60 180 80 60 150</Setting>
+              <Setting name="Local filelist colwidths">170 80 120 120</Setting>
+              <Setting name="Remote filelist colwidths">150 75 80 100 80 85</Setting>
+              <Setting name="Window position and size">0 360 41 1184 840 </Setting>
+              <Setting name="Local filelist shown columns">1111</Setting>
+              <Setting name="Remote filelist shown columns">111111</Setting>
+              <Setting name="Local filelist column order">0,1,2,3</Setting>
+              <Setting name="Remote filelist column order">0,1,2,3,4,5</Setting>
+              <Setting name="Local filelist sortorder">0 0</Setting>
+              <Setting name="Remote filelist sortorder">0 0</Setting>
+              <Setting name="Update Check">0</Setting>
+              <Setting name="Number of Transfers">10</Setting>
+              <Setting name="Time Format">0</Setting>
+              <Setting name="Date Format">0</Setting>
+              <Setting name="Default editor" platform="win">0</Setting>
+              <Setting name="Splitter positions (v2)">97 -632 500000000 50 50 500000000</Setting>
+              <Setting name="Tab data" sensitive="1">
+                <Tabs>
+                  <Tab selected="1">
+                    <Host />
+                    <Port>21</Port>
+                    <Protocol>-1</Protocol>
+                    <Logontype>0</Logontype>
+                    <BypassProxy>0</BypassProxy>
+                    <Site></Site>
+                    <RemotePath></RemotePath>
+                    <LocalPath>C:\Users\__RDP_USER__\</LocalPath>
+                  </Tab>
+                </Tabs>
+              </Setting>
+            </Settings>
+          </FileZilla3>
+          '@
+          $fzXml.Replace("__RDP_USER__", $env:RDP_USER) | Out-File -FilePath "C:\filezilla.xml" -Encoding utf8
+
+          # 2. layout.xml
+          @'
+          <?xml version="1.0"?>
+          <FileZilla3 version="3.71.1" platform="windows">
+            <Layout Builddate="2026-06-04" Buildtime="14:53:46">
+              <Resources />
+              <Language id="en_US" date="1780584876">
+                <Font font="1;9;-12;0;0;0;400;0;0;0;1;0;0;5;0;Segoe UI" width="669" height="15" />
+                <Dialog name="Settings" width="449" />
+              </Language>
+            </Layout>
+          </FileZilla3>
+          '@ | Out-File -FilePath "C:\layout.xml" -Encoding utf8
+
+      - name: Setup Auto Launcher saat Login RDP
+        shell: pwsh
+        run: |
+          $startupDir = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
+          New-Item -ItemType Directory -Force -Path $startupDir
+
+          # Menyuntikkan settingan XML & Optimasi HKCU langsung ke user yang login RDP
+          $batContent = @"
+          @echo off
+          timeout /t 2 /nobreak >nul
+
+          reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f >nul 2>&1
+          reg add "HKCU\Control Panel\Desktop" /v DragFullWindows /t REG_SZ /d 0 /f >nul 2>&1
+          reg add "HKCU\Control Panel\Desktop" /v FontSmoothing /t REG_SZ /d 0 /f >nul 2>&1
+
+          mkdir "%APPDATA%\FileZilla" >nul 2>&1
+          copy /y "C:\filezilla.xml" "%APPDATA%\FileZilla\filezilla.xml" >nul 2>&1
+          copy /y "C:\layout.xml" "%APPDATA%\FileZilla\layout.xml" >nul 2>&1
+
+          timeout /t 1 /nobreak >nul
+
+          start "" "C:\Program Files\FileZilla FTP Client\filezilla.exe"
+          start "" "C:\Users\Public\Desktop\Adobe Stock.lnk"
+          start "" "C:\Users\Public\Desktop\AutoDownloader.exe"
+
+          del "%~f0"
+          exit
+          "@
+          Set-Content -Path "$startupDir\launch_apps.bat" -Value $batContent
 
       - name: Jalankan Tunnel, Kirim ke Google Sheets & Jaga Sesi Aktif
         shell: pwsh
